@@ -1,0 +1,5 @@
+# Signatures for ghcr.io/rootless-stack are sha256-<digest>.sig tags next
+# to the image (cosign's classic format), which policy.json checks.
+docker:
+  ghcr.io/rootless-stack:
+    use-sigstore-attachments: true

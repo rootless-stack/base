@@ -59,13 +59,58 @@ internals.
 - **SELinux and AppArmor alike.**  Mounts carry `:Z` (private to one
   container) or `:z` (shared within the stack).  A mount of another
   stack's directory carries neither: only the owner may relabel it.
-- **Pinned images.**  Every image reference is tag plus digest.
+- **Pinned or signed images.**  Upstream images are referenced by tag
+  plus digest.  Our own images by tag alone, with `AutoUpdate=registry`:
+  their signature, not a digest, makes them trustworthy (below).
 - **Plain systemd.**  Each stack has an anchor unit, `<stack>.service`,
   that starts, stops and restarts all its containers.  Healthchecks gate
   readiness, and an unhealthy container is restarted on its own.
 - **Local changes in drop-ins**
   (`~/.config/containers/systemd/<unit>.container.d/*.conf`), so shipped
   units can be replaced on update.
+
+## Signed images and automatic updates
+
+Images under `ghcr.io/rootless-stack/` are published only after their
+stack's tests pass, and signed twice, both signatures logged in
+[Rekor](https://docs.sigstore.dev/logging/overview/), the public
+transparency log:
+
+- **keyless**, by the publishing workflow;
+- with the **org key** ([sigstore/cosign.pub](sigstore/cosign.pub)), which
+  Podman checks itself, without cosign.
+
+With [containers/policy.json](containers/policy.json) in a stack user's
+`~/.config/containers/`, Podman refuses any image from
+`ghcr.io/rootless-stack/` that lacks a valid org-key signature or its Rekor
+entry; other registries are unaffected.  As the stack user:
+
+```sh
+mkdir -p ~/.config/containers/registries.d
+cp /opt/rootless-stack/base/containers/policy.json ~/.config/containers/
+cp /opt/rootless-stack/base/containers/registries.d/* ~/.config/containers/registries.d/
+```
+
+Units of signed images carry `AutoUpdate=registry`.  To keep them current,
+enable Podman's timer as the stack user:
+
+```sh
+systemctl --user enable --now podman-auto-update.timer
+```
+
+Once a day it pulls a newer image for the unit's tag, checked against the
+policy, restarts the container and rolls back if the new one does not
+come up healthy.  Images from other registries are pinned by digest and
+change only with the repository.
+
+To check a signature by hand with cosign instead:
+
+```sh
+cosign verify ghcr.io/rootless-stack/<image>:<tag> \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity https://github.com/rootless-stack/.github/.github/workflows/promote-image.yml@refs/heads/main \
+  --certificate-github-workflow-repository rootless-stack/<stack>
+```
 
 ## render.py
 

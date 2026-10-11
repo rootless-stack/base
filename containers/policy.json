@@ -1,0 +1,16 @@
+{
+  "default": [{"type": "insecureAcceptAnything"}],
+  "transports": {
+    "docker": {
+      "ghcr.io/rootless-stack": [
+        {
+          "type": "sigstoreSigned",
+          "keyPath": "/opt/rootless-stack/base/sigstore/cosign.pub",
+          "rekorPublicKeyPath": "/opt/rootless-stack/base/sigstore/rekor.pub",
+          "signedIdentity": {"type": "matchRepository"}
+        }
+      ]
+    },
+    "docker-daemon": {"": [{"type": "insecureAcceptAnything"}]}
+  }
+}
