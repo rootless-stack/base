@@ -1,0 +1,9 @@
+# /etc/rootless-stack/ports.conf — read by rootless-port-reservation.
+#
+# One line per stack user: the ports between 25 and 1023 its stack serves
+# on the host.  A user without ports may still be listed: it then cannot
+# bind any of them.  System services (system.slice) keep every port.
+#
+# user      ports (tcp:N or udp:N)
+mail-svc    tcp:25 tcp:465 tcp:587 tcp:993
+ldap-svc

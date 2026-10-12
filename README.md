@@ -112,6 +112,45 @@ cosign verify ghcr.io/rootless-stack/<image>:<tag> \
   --certificate-github-workflow-repository rootless-stack/<stack>
 ```
 
+## Optional: port reservation
+
+Stacks that serve ports below 1024 (mail: 25, 465, 587, 993) need
+`net.ipv4.ip_unprivileged_port_start = 25`, which lets **every** user bind
+25-1023.  Podman offers no per-user alternative: a capability does not
+reach across a rootless container's user namespace.
+
+[hardening/ports](hardening/ports/) restores that protection, and makes it
+stricter than the kernel's, from one file listing which stack user serves
+which ports:
+
+1. **nftables:** traffic to 25-1023 (TCP and UDP) reaches a socket only if
+   it belongs to a system service (`system.slice`, `init.scope`) or to the
+   stack user that owns the port.  Anyone else's listener gets nothing.
+2. **systemd:** a listed stack user can bind only its own ports in that
+   range (`SocketBindDeny=` / `SocketBindAllow=` on its slice), in any
+   network namespace, plus 53 for Podman's container DNS.
+
+As root:
+
+```sh
+P=/opt/rootless-stack/base/hardening/ports
+install -m 0755 $P/rootless-port-reservation /usr/local/sbin/
+install -D -m 0644 $P/ports.conf.example /etc/rootless-stack/ports.conf   # then edit it
+install -m 0644 $P/rootless-port-reservation.service /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now rootless-port-reservation.service
+```
+
+After editing `ports.conf`: `systemctl reload rootless-port-reservation`,
+then restart the affected stacks.  Things to know:
+
+- A connection to a reserved port nobody may serve is dropped silently,
+  not refused.
+- A root process started from a login shell runs in `user-0.slice`, not
+  `system.slice`, and gets no traffic on reserved ports.
+- A listed stack cannot bind other ports below 1024 even inside its own
+  containers' networks.
+- Ports above 1023 (e.g. ManageSieve on 4190) are not covered.
+
 ## render.py
 
 ```sh

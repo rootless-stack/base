@@ -1,0 +1,93 @@
+#!/bin/bash
+# rootless-port-reservation apply|remove
+#
+# Optional hardening for hosts that lower net.ipv4.ip_unprivileged_port_start
+# to 25 so rootless stacks can serve mail and web ports.  That lets every
+# user bind 25-1023; this restores and refines the protection, per stack,
+# from /etc/rootless-stack/ports.conf:
+#
+#  1. nftables: traffic to 25-1023 (TCP and UDP) reaches a socket only if it
+#     belongs to a system service (system.slice, init.scope) or to the stack
+#     user that owns the port.  Anyone else's listener gets nothing.
+#  2. systemd: each listed stack user's slice may bind only its own ports
+#     in 25-1023 (SocketBindDeny/Allow), in any network namespace, plus 53,
+#     which Podman's container DNS (aardvark-dns) binds on bridge networks.
+set -euo pipefail
+
+CONF=/etc/rootless-stack/ports.conf
+TABLE=rootless-port-reservation
+DROPIN=50-rootless-ports.conf
+
+die() { echo "rootless-port-reservation: $*" >&2; exit 1; }
+
+entries() {  # user<TAB>uid<TAB>ports, one line per stack user
+  [ -r "$CONF" ] || die "$CONF not found"
+  local user ports uid p
+  while read -r user ports; do
+    case "$user" in ''|'#'*) continue ;; esac
+    uid=$(id -u "$user" 2>/dev/null) || die "unknown user: $user"
+    for p in $ports; do
+      [[ $p =~ ^(tcp|udp):([0-9]+)$ ]] || die "$user: '$p' is not tcp:N or udp:N"
+      (( BASH_REMATCH[2] >= 25 && BASH_REMATCH[2] <= 1023 )) || die "$user: $p is outside 25-1023"
+    done
+    printf '%s\t%s\t%s\n' "$user" "$uid" "$ports"
+  done < "$CONF"
+}
+
+apply() {
+  local list user uid ports p tcp udp
+  list=$(entries)
+  # The rules name each user's slice, which exists once its user manager
+  # runs; with lingering it would start anyway.
+  while IFS=$'\t' read -r user uid ports; do
+    systemctl start "user@$uid.service"
+  done <<< "$list"
+
+  {
+    echo "table inet $TABLE"
+    echo "delete table inet $TABLE"
+    echo "table inet $TABLE {"
+    echo "  chain input {"
+    echo "    type filter hook input priority filter; policy accept;"
+    echo "    ct state established,related accept"
+    echo "    meta l4proto { tcp, udp } th dport 25-1023 socket cgroupv2 level 1 \"system.slice\" accept"
+    echo "    meta l4proto { tcp, udp } th dport 25-1023 socket cgroupv2 level 1 \"init.scope\" accept"
+    while IFS=$'\t' read -r user uid ports; do
+      tcp=; udp=
+      for p in $ports; do
+        case $p in tcp:*) tcp+="${p#tcp:}, " ;; udp:*) udp+="${p#udp:}, " ;; esac
+      done
+      [ -z "$tcp" ] || echo "    tcp dport { ${tcp%, } } socket cgroupv2 level 2 \"user.slice/user-$uid.slice\" accept  # $user"
+      [ -z "$udp" ] || echo "    udp dport { ${udp%, } } socket cgroupv2 level 2 \"user.slice/user-$uid.slice\" accept  # $user"
+    done <<< "$list"
+    echo "    meta l4proto { tcp, udp } th dport 25-1023 counter drop"
+    echo "  }"
+    echo "}"
+  } | nft -f -
+
+  while IFS=$'\t' read -r user uid ports; do
+    mkdir -p "/etc/systemd/system/user-$uid.slice.d"
+    {
+      echo "# Written by rootless-port-reservation from $CONF ($user)."
+      echo "[Slice]"
+      echo "SocketBindDeny=tcp:25-1023"
+      echo "SocketBindDeny=udp:25-1023"
+      echo "SocketBindAllow=tcp:53"
+      echo "SocketBindAllow=udp:53"
+      for p in $ports; do echo "SocketBindAllow=$p"; done
+    } > "/etc/systemd/system/user-$uid.slice.d/$DROPIN"
+  done <<< "$list"
+  systemctl daemon-reload
+}
+
+remove() {
+  nft delete table inet "$TABLE" 2>/dev/null || true
+  rm -f /etc/systemd/system/user-*.slice.d/"$DROPIN"
+  systemctl daemon-reload
+}
+
+case "${1:-}" in
+  apply) apply ;;
+  remove) remove ;;
+  *) die "usage: rootless-port-reservation apply|remove" ;;
+esac

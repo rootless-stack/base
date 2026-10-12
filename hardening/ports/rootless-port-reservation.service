@@ -1,0 +1,18 @@
+[Unit]
+Description=Reserve ports 25-1023 to system services and their stacks
+Documentation=https://github.com/rootless-stack/base#optional-port-reservation
+After=systemd-logind.service
+# A firewall reload that flushes the whole ruleset (Ubuntu's nftables.conf
+# starts with `flush ruleset`) must be followed by this one.
+After=nftables.service
+PartOf=nftables.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/rootless-port-reservation apply
+ExecReload=/usr/local/sbin/rootless-port-reservation apply
+ExecStop=/usr/local/sbin/rootless-port-reservation remove
+
+[Install]
+WantedBy=multi-user.target
