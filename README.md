@@ -6,8 +6,9 @@ its own repository and lists what it needs:
 
 | Stack | What | Needs |
 | --- | --- | --- |
+| [dns](https://github.com/rootless-stack/dns) | validating resolver for the host (not containers) | nothing |
 | [ldap](https://github.com/rootless-stack/ldap) | lldap user directory | base |
-| [mail](https://github.com/rootless-stack/mail) | Postfix, Dovecot, Rspamd, ClamAV | base, ldap |
+| [mail](https://github.com/rootless-stack/mail) | Postfix, Dovecot, Rspamd, ClamAV | base, ldap, dns |
 | security | CrowdSec with stack-specific rules | planned |
 | web | Caddy front door, ACME | planned |
 | cloud | Nextcloud | planned |
