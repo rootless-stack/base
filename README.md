@@ -16,9 +16,10 @@ its own repository and lists what it needs:
 
 Each stack runs as its own unprivileged Linux user, one Quadlet unit per
 container, with no root daemon and no orchestrator.  Hosts need `podman`
-(5.0 or newer) and `systemd` to run them; setting a stack up also uses
-`openssl` and, for stacks with configuration templates, Python 3.11+ with
-Jinja2 (`render.py`).
+5.5 or newer (the units use Quadlet keys older versions reject, such as
+`Memory=`; each stack's CI checks its units with 5.5) and `systemd` to run
+them; setting a stack up also uses `openssl` and, for stacks with
+configuration templates, Python 3.11+ with Jinja2 (`render.py`).
 
 ## Host setup
 
